@@ -71,6 +71,30 @@ Selectors.matcher(::Type{T}, doc::Documenter.Document) where {T <: Builder.Docum
 
 Selectors.strict(::Type{T}) where {T <: Builder.DocumentPipeline} = false
 
+function get_paths(val::Pair)
+    return get_paths(val.second)
+end
+
+function get_paths(val::Vector)
+    return map(get_paths, val)
+end
+
+function get_paths(val::String)
+    return val
+end
+
+function flatten(val::Vector)
+    out = empty(val)
+    for v in val
+       append!(out, flatten(v))
+    end
+    return out
+end
+
+function flatten(val::String)
+    return [val]
+end
+
 function Selectors.runner(::Type{Builder.SetupBuildDirectory}, doc::Documenter.Document)
     @info "SetupBuildDirectory: setting up build directory."
 
@@ -94,6 +118,10 @@ function Selectors.runner(::Type{Builder.SetupBuildDirectory}, doc::Documenter.D
     # Markdown files, however, get added to the document and also stored into
     # `mdpages`, to be used later.
     mdpages = String[]
+
+    pages_to_build = flatten(get_paths(doc.user.pages))
+    pages_to_build_rel_to_source = map(path -> joinpath(source, path), pages_to_build)
+
     for (root, dirs, files) in walkdir(source; follow_symlinks = true)
         for dir in dirs
             d = normpath(joinpath(build, relpath(root, source), dir))
@@ -114,8 +142,10 @@ function Selectors.runner(::Type{Builder.SetupBuildDirectory}, doc::Documenter.D
             end
 
             if endswith(file, ".md")
-                push!(mdpages, Documenter.srcpath(source, root, file))
-                Documenter.addpage!(doc, src, dst, wd)
+                if src in pages_to_build_rel_to_source
+                    push!(mdpages, Documenter.srcpath(source, root, file))
+                    Documenter.addpage!(doc, src, dst, wd)
+                end
             else
                 cp(src, dst; force = true)
             end
